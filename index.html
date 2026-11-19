@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Fool — 3D</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.184.0/build/three.module.js",
+    "three/addons/controls/OrbitControls.js": "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js",
+    "three/addons/exporters/OBJExporter.js": "https://unpkg.com/three@0.184.0/examples/jsm/exporters/OBJExporter.js",
+    "three/addons/exporters/GLTFExporter.js": "https://unpkg.com/three@0.184.0/examples/jsm/exporters/GLTFExporter.js"
+  },
+  "integrity": {
+    "https://unpkg.com/three@0.184.0/build/three.module.js": "sha384-8FCZ1eVO6it4+pbec2aDtnTrwjWXZLJRC+MAGCIPDgsYnUrl/E0A2YlF8ioMKI/J",
+    "https://unpkg.com/three@0.184.0/build/three.core.js": "sha384-dw2ooPewaEIrAgl6oFDBmmBWCE9oW9LxRGcfwZ0hLvEprzo202wXl7vCYHRlSnOT",
+    "https://unpkg.com/three@0.184.0/examples/jsm/controls/OrbitControls.js": "sha384-4rziNxOBZKQ69i+w+f89KJ55TCYquwchVbByQwmaOeIOXdOU2PLDn3kOfXHwIJC9",
+    "https://unpkg.com/three@0.184.0/examples/jsm/exporters/OBJExporter.js": "sha384-nbwtoZENJD3Vq+ACK0CuGQdPMuDWHkamC2KJD70EV5nfg6jQjfppKOea07YJN+N3",
+    "https://unpkg.com/three@0.184.0/examples/jsm/exporters/GLTFExporter.js": "sha384-VofkvpG6HERhFCYbsUOHeNXBCqID2nfqkQqnVzE1jc/oPcz+qJ13ADdXH08hE+cQ"
+  }
+}
+</script>
+<style>
+  html,body{margin:0;background:#f1ead2;font-family:Helvetica,Arial,sans-serif}
+  three-d-stage:not(:defined){visibility:hidden}
+</style>
+</head>
+<body>
+<three-d-stage name="the-fool" background="#f1ead2"></three-d-stage>
+<script src="three-d-stage.js"></script>
+<script type="module">
+const stage = document.querySelector('three-d-stage');
+const { THREE } = await stage.ready;
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const UP = V(0, 1, 0);
+
+const M = (name, color, roughness = 0.7, metalness = 0, extra = {}) =>
+  Object.assign(new THREE.MeshStandardMaterial({ name, color, roughness, metalness, ...extra }));
+const mat = {
+  tunic: M('tunic_black', 0x24221f, 0.85, 0, { side: THREE.DoubleSide }),
+  orange: M('lining_orange', 0xe0662a, 0.7, 0, { side: THREE.DoubleSide }),
+  linen: M('linen_white', 0xeee8da, 0.8),
+  skin: M('skin', 0xe8c3a0, 0.6),
+  ochre: M('ochre_yellow', 0xe8bf38, 0.55),
+  tights: M('tights_olive', 0xb8ad6c, 0.75),
+  green: M('foliage_green', 0x557d3c, 0.7),
+  red: M('feather_red', 0xb8302a, 0.6),
+  wood: M('staff_wood', 0x3a2b20, 0.6),
+  satchel: M('satchel_rust', 0xa9472a, 0.75),
+  rock: M('rock_brown', 0x8f6a42, 0.95, 0, { flatShading: true }),
+  rockDark: M('rock_dark', 0x6a4b2e, 0.95, 0, { flatShading: true }),
+  dog: M('dog_white', 0xf3f0e9, 0.8),
+  dark: M('dark_grey', 0x2e2b29, 0.6),
+  gold: M('sun_gold', 0xf2c947, 0.4, 0.25, { emissive: 0x3a2a00 }),
+  brass: M('brass_rod', 0xb89a5a, 0.45, 0.3),
+};
+
+function mesh(geo, material, name, parent) {
+  const m = new THREE.Mesh(geo, material);
+  m.name = name;
+  parent.add(m);
+  return m;
+}
+// cylinder from a (radius ra) to b (radius rb)
+function limb(a, b, ra, rb, material, name, parent, seg = 32, open = false) {
+  const d = b.clone().sub(a), len = d.length();
+  const m = mesh(new THREE.CylinderGeometry(rb, ra, len, seg, 1, open), material, name, parent);
+  m.position.copy(a).addScaledVector(d, 0.5);
+  m.quaternion.setFromUnitVectors(UP, d.normalize());
+  return m;
+}
+function ball(p, r, material, name, parent, scale) {
+  const m = mesh(new THREE.SphereGeometry(r, 32, 24), material, name, parent);
+  m.position.copy(p);
+  if (scale) m.scale.set(...scale);
+  return m;
+}
+
+const model = new THREE.Group(); model.name = 'the_fool_diorama';
+
+/* ---------------- Rock outcrop ---------------- */
+const rockGrp = new THREE.Group(); rockGrp.name = 'cliff'; model.add(rockGrp);
+rockGrp.scale.set(0.78, 1, 0.8); rockGrp.position.x = 0.077;
+const outline = [[-0.75,0.35],[-0.6,0.62],[-0.1,0.74],[0.5,0.62],[1.1,0.72],[1.45,0.38],[1.52,-0.2],[1.2,-0.62],[0.5,-0.72],[-0.2,-0.62],[-0.65,-0.32],[-0.82,0.05]];
+function slab(scale, dx, depth, top, material, name) {
+  const s = new THREE.Shape();
+  outline.forEach(([x, z], i) => {
+    const px = (x - 0.35) * scale[i % scale.length] + 0.35 + dx, py = -z * scale[(i + 3) % scale.length];
+    i ? s.lineTo(px, py) : s.moveTo(px, py);
+  });
+  const bt = 0.035;
+  const g = new THREE.ExtrudeGeometry(s, { depth, bevelEnabled: true, bevelThickness: bt, bevelSize: 0.04, bevelSegments: 2, curveSegments: 1 });
+  const m = mesh(g, material, name, rockGrp);
+  m.rotation.x = -Math.PI / 2;
+  m.position.y = top - depth - bt;
+}
+slab([1, 1.02, 0.98, 1], 0, 0.28, 0, mat.rock, 'cliff_layer_top');
+slab([0.96, 0.92, 0.99, 0.94], 0.06, 0.4, -0.3, mat.rockDark, 'cliff_layer_mid');
+slab([0.9, 0.86, 0.93, 0.88], 0.1, 0.5, -0.72, mat.rock, 'cliff_layer_base');
+
+// boulders: position-hashed jitter keeps shared vertices welded
+function hash(x, y, z) { const s = Math.sin(x * 127.1 + y * 311.7 + z * 74.7) * 43758.5453; return s - Math.floor(s); }
+function boulder(p, r, sc, material, name, seed) {
+  const g = new THREE.IcosahedronGeometry(r, 1), pos = g.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    const k = 0.82 + 0.3 * hash(x * 10 + seed, y * 10, z * 10);
+    pos.setXYZ(i, x * k, y * k, z * k);
+  }
+  g.computeVertexNormals();
+  const m = mesh(g, material, name, rockGrp);
+  m.position.copy(p); m.scale.set(...sc);
+  m.rotation.y = seed;
+}
+boulder(V(1.18, 0.02, -0.42), 0.24, [1.1, 0.8, 1], mat.rockDark, 'boulder_back', 1.3);
+boulder(V(1.32, -0.02, 0.36), 0.16, [1, 0.7, 1.1], mat.rock, 'boulder_right', 2.1);
+boulder(V(-0.45, -0.03, -0.44), 0.13, [1.2, 0.6, 1], mat.rockDark, 'boulder_left', 0.7);
+boulder(V(-0.74, -0.42, 0.2), 0.16, [0.9, 1, 1.2], mat.rockDark, 'ledge_cliff_face', 3.4);
+boulder(V(0.2, -0.95, 0.66), 0.18, [1.4, 0.8, 0.8], mat.rockDark, 'ledge_front', 5.2);
+
+/* ---------------- Figure (local: faces +z, +x is his left) ---------------- */
+const fig = new THREE.Group(); fig.name = 'fool';
+fig.rotation.y = -Math.PI / 2 + 0.3;
+model.add(fig);
+
+// legs
+const legs = [
+  { side: 'left', hip: V(0.09, 0.92, 0), knee: V(0.1, 0.5, 0.12), ankle: V(0.1, 0.085, 0.15), toe: V(0.1, 0.04, 0.34) },
+  { side: 'right', hip: V(-0.09, 0.92, 0), knee: V(-0.1, 0.5, -0.17), ankle: V(-0.1, 0.17, -0.38), toe: V(-0.1, 0.035, -0.22) },
+];
+for (const L of legs) {
+  limb(L.hip, L.knee, 0.07, 0.055, mat.tights, `thigh_${L.side}`, fig);
+  ball(L.knee, 0.055, mat.tights, `knee_${L.side}`, fig);
+  limb(L.knee, L.ankle, 0.055, 0.04, mat.tights, `shin_${L.side}`, fig);
+  const top = L.ankle.clone().lerp(L.knee, 0.55);
+  limb(L.ankle, top, 0.05, 0.06, mat.ochre, `boot_shaft_${L.side}`, fig);
+  const cuffA = L.ankle.clone().lerp(L.knee, 0.45);
+  limb(cuffA, top, 0.07, 0.074, mat.ochre, `boot_cuff_${L.side}`, fig);
+  ball(L.ankle, 0.05, mat.ochre, `boot_heel_${L.side}`, fig);
+  limb(L.ankle, L.toe, 0.046, 0.036, mat.ochre, `boot_foot_${L.side}`, fig);
+  ball(L.toe, 0.036, mat.ochre, `boot_toe_${L.side}`, fig, [1, 0.9, 1.2]);
+}
+
+// tunic body
+const prof = [[0.3, 0.72], [0.24, 0.8], [0.18, 0.94], [0.145, 1.02], [0.16, 1.18], [0.175, 1.32], [0.19, 1.42], [0.13, 1.48], [0.07, 1.5]];
+const ZS = 0.72;
+const tunic = mesh(new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(r, y)), 48), mat.tunic, 'tunic', fig);
+tunic.scale.z = ZS;
+const rAt = y => {
+  for (let i = 0; i < prof.length - 1; i++) {
+    const [r0, y0] = prof[i], [r1, y1] = prof[i + 1];
+    if (y >= y0 && y <= y1) return r0 + (r1 - r0) * (y - y0) / (y1 - y0);
+  }
+  return prof[0][0];
+};
+const belt = mesh(new THREE.TorusGeometry(0.148, 0.016, 12, 48), mat.ochre, 'belt', fig);
+belt.rotation.x = Math.PI / 2; belt.position.y = 1.02; belt.scale.y = ZS;
+const collar = mesh(new THREE.TorusGeometry(0.08, 0.024, 16, 40), mat.linen, 'collar', fig);
+collar.rotation.x = Math.PI / 2; collar.position.y = 1.48; collar.scale.y = 0.85;
+
+// flower pattern on tunic
+const flowerGeo = new THREE.CylinderGeometry(0.032, 0.032, 0.004, 24);
+const centreGeo = new THREE.CylinderGeometry(0.011, 0.011, 0.006, 16);
+let fi = 0;
+[[0.77, 0], [0.86, 0.5], [1.12, 0], [1.24, 0.5], [1.36, 0]].forEach(([y, off]) => {
+  for (let k = 0; k < 8; k++) {
+    const phi = (k + off) / 8 * Math.PI * 2;
+    const r = rAt(y);
+    const yb = Math.min(y + 0.02, 1.48), ya = Math.max(y - 0.02, 0.72);
+    const slope = (rAt(yb) - rAt(ya)) / (yb - ya);
+    const n = V(Math.sin(phi), -slope, Math.cos(phi) / ZS).normalize();
+    const p = V(r * Math.sin(phi), y, r * Math.cos(phi) * ZS).addScaledVector(n, 0.003);
+    const q = new THREE.Quaternion().setFromUnitVectors(UP, n);
+    const id = String(++fi).padStart(2, '0');
+    const f = mesh(flowerGeo, mat.orange, `tunic_flower_${id}`, fig); f.position.copy(p); f.quaternion.copy(q);
+    const c = mesh(centreGeo, mat.green, `tunic_flower_centre_${id}`, fig); c.position.copy(p).addScaledVector(n, 0.002); c.quaternion.copy(q);
+  }
+});
+
+// head
+const neck = limb(V(0, 1.45, 0), V(0, 1.57, -0.01), 0.047, 0.044, mat.skin, 'neck', fig);
+const head = new THREE.Group(); head.name = 'head';
+head.position.set(0, 1.55, -0.01); head.rotation.x = -0.45; fig.add(head);
+ball(V(0, 0.1, 0.005), 0.095, mat.skin, 'head_skull', head, [0.88, 1.08, 1]);
+ball(V(0, 0.045, 0.04), 0.055, mat.skin, 'head_jaw', head, [1, 0.9, 1]);
+const nose = mesh(new THREE.ConeGeometry(0.014, 0.035, 16), mat.skin, 'nose', head);
+nose.position.set(0, 0.09, 0.1); nose.rotation.x = Math.PI / 2;
+for (const s of [1, -1]) {
+  ball(V(0.085 * s, 0.09, -0.005), 0.022, mat.skin, `ear_${s > 0 ? 'left' : 'right'}`, head, [0.5, 1, 0.8]);
+  ball(V(0.032 * s, 0.112, 0.088), 0.009, mat.dark, `eye_${s > 0 ? 'left' : 'right'}`, head);
+}
+const hair = mesh(new THREE.SphereGeometry(0.1, 40, 20, 0, Math.PI * 2, 0, Math.PI * 0.55), mat.ochre, 'hair', head);
+hair.position.set(0, 0.11, -0.012); hair.rotation.x = -0.35; hair.scale.set(0.93, 1.05, 1.06);
+ball(V(0, 0.06, -0.05), 0.07, mat.ochre, 'hair_back', head, [1.2, 1, 0.9]);
+const wreath = mesh(new THREE.TorusGeometry(0.097, 0.017, 16, 48), mat.green, 'laurel_wreath', head);
+wreath.position.set(0, 0.135, -0.018); wreath.rotation.x = Math.PI / 2 - 0.35; wreath.scale.set(0.95, 1.08, 1);
+const feather = ball(V(0, 0.18, -0.14), 1, mat.red, 'feather', head, [0.022, 0.03, 0.14]);
+feather.rotation.x = 0.85;
+
+// sleeves: flared open bell with orange lining + dagged drape
+const drapePts = [[-0.02, 0], [0.26, 0], [0.2, -0.08], [0.23, -0.12], [0.15, -0.16], [0.17, -0.21], [0.08, -0.22], [0.07, -0.28], [0, -0.24], [-0.04, -0.28], [-0.05, -0.12]];
+function drape(at, toward, side) {
+  const g = new THREE.Group(); g.name = `sleeve_drape_${side}`;
+  const h = toward.clone().sub(at); h.y = 0; h.normalize();
+  g.position.copy(at); g.rotation.y = Math.atan2(-h.z, h.x);
+  const mk = (sx, sy, z, material, name) => {
+    const s = new THREE.Shape(drapePts.map(([x, y]) => new THREE.Vector2(x * sx, y * sy)));
+    const geo = new THREE.ExtrudeGeometry(s, { depth: 0.007, bevelEnabled: false });
+    const m = mesh(geo, material, name, g); m.position.z = z;
+  };
+  mk(1, 1, 0, mat.tunic, `sleeve_drape_outer_${side}`);
+  mk(1.05, 1.16, -0.007, mat.orange, `sleeve_drape_lining_${side}`);
+  fig.add(g);
+}
+function arm(side, sh, el, wr) {
+  const d = el.clone().sub(sh), past = el.clone().addScaledVector(d.clone().normalize(), 0.05);
+  ball(sh, 0.07, mat.tunic, `shoulder_${side}`, fig);
+  limb(sh, past, 0.065, 0.125, mat.tunic, `sleeve_${side}`, fig, 32, true);
+  limb(sh.clone().addScaledVector(d, 0.15), past.clone().addScaledVector(d.clone().normalize(), -0.004), 0.058, 0.118, mat.orange, `sleeve_lining_${side}`, fig, 32, true);
+  limb(sh, el, 0.05, 0.042, mat.linen, `upper_arm_${side}`, fig);
+  ball(el, 0.042, mat.linen, `elbow_${side}`, fig);
+  limb(el, wr, 0.042, 0.033, mat.linen, `forearm_${side}`, fig);
+  const hand = wr.clone().addScaledVector(wr.clone().sub(el).normalize(), 0.035);
+  ball(hand, 0.042, mat.skin, `hand_${side}`, fig, [0.85, 1.05, 1]);
+  drape(el.clone().add(V(0, -0.03, 0)), sh, side);
+  return hand;
+}
+const rHand = arm('right', V(-0.19, 1.41, 0), V(-0.25, 1.24, 0.22), V(-0.23, 1.22, 0.44));
+const lHand = arm('left', V(0.19, 1.41, 0), V(0.38, 1.3, -0.18), V(0.5, 1.37, -0.38));
+
+// staff + satchel
+const sDir = V(-0.18, 1.49, 0.0).sub(rHand).normalize();
+const sFront = rHand.clone().addScaledVector(sDir, -0.14);
+const sBack = rHand.clone().addScaledVector(sDir, 1.3);
+limb(sFront, sBack, 0.017, 0.015, mat.wood, 'staff', fig, 16);
+const strapEnd = sBack.clone().add(V(0, -0.09, 0)).addScaledVector(sDir, -0.03);
+limb(sBack.clone().addScaledVector(sDir, -0.03), strapEnd, 0.008, 0.008, mat.satchel, 'satchel_strap', fig, 12);
+const bagProf = [[0.001, 0], [0.06, 0.012], [0.095, 0.06], [0.092, 0.12], [0.06, 0.165], [0.022, 0.19], [0.03, 0.215], [0.001, 0.22]];
+const bag = mesh(new THREE.LatheGeometry(bagProf.map(([r, y]) => new THREE.Vector2(r, y)), 40), mat.satchel, 'satchel', fig);
+bag.position.copy(strapEnd).add(V(0, -0.215, 0));
+const knot = mesh(new THREE.TorusGeometry(0.024, 0.008, 10, 24), mat.ochre, 'satchel_tie', fig);
+knot.position.copy(strapEnd).add(V(0, -0.03, 0)); knot.rotation.x = Math.PI / 2;
+
+// white rose
+const stemTop = lHand.clone().add(V(0.01, 0.15, -0.02));
+limb(lHand.clone().add(V(0, -0.03, 0)), stemTop, 0.005, 0.004, mat.green, 'rose_stem', fig, 10);
+ball(stemTop.clone().add(V(0, 0.02, 0)), 0.03, mat.linen, 'rose_bloom', fig, [1, 0.8, 1]);
+for (let k = 0; k < 5; k++) {
+  const a = k / 5 * Math.PI * 2;
+  ball(stemTop.clone().add(V(Math.cos(a) * 0.028, 0.012, Math.sin(a) * 0.028)), 0.018, mat.linen, `rose_petal_${k + 1}`, fig, [1, 0.55, 1]);
+}
+[[0.07, 1], [0.1, -1]].forEach(([t, s], i) => {
+  const lf = ball(lHand.clone().lerp(stemTop, t / 0.15).add(V(0.022 * s, 0, 0)), 0.022, mat.green, `rose_leaf_${i + 1}`, fig, [1, 0.3, 0.55]);
+  lf.rotation.z = 0.5 * s;
+});
+
+/* ---------------- Dog (faces -x, rearing up) ---------------- */
+const dog = new THREE.Group(); dog.name = 'dog'; dog.position.set(0.8, 0, 0.32); dog.rotation.y = 0.25; model.add(dog);
+const hip = V(0.1, 0.24, 0), chest = V(-0.08, 0.47, 0);
+{
+  const d = chest.clone().sub(hip), len = d.length();
+  const body = mesh(new THREE.CapsuleGeometry(0.09, len, 12, 32), mat.dog, 'dog_body', dog);
+  body.position.copy(hip).addScaledVector(d, 0.5); body.quaternion.setFromUnitVectors(UP, d.normalize());
+  body.scale.set(1, 1, 0.85);
+}
+const H = V(-0.17, 0.63, 0);
+limb(chest, H.clone().add(V(0.02, -0.03, 0)), 0.065, 0.05, mat.dog, 'dog_neck', dog);
+ball(H, 0.075, mat.dog, 'dog_head', dog, [1.1, 0.95, 0.9]);
+limb(H.clone().add(V(-0.05, -0.005, 0)), H.clone().add(V(-0.135, 0.03, 0)), 0.042, 0.027, mat.dog, 'dog_snout', dog);
+ball(H.clone().add(V(-0.14, 0.035, 0)), 0.017, mat.dark, 'dog_nose', dog);
+for (const s of [1, -1]) {
+  const sd = s > 0 ? 'left' : 'right';
+  const ear = mesh(new THREE.ConeGeometry(0.03, 0.075, 16), mat.dark, `dog_ear_${sd}`, dog);
+  ear.position.copy(H).add(V(0.025, 0.075, 0.042 * s)); ear.rotation.set(0.25 * s, 0, -0.45);
+  ball(H.clone().add(V(-0.06, 0.03, 0.037 * s)), 0.01, mat.dark, `dog_eye_${sd}`, dog);
+  const hipS = hip.clone().add(V(0, -0.02, 0.06 * s)), knee = V(0.17, 0.1, 0.065 * s), paw = V(0.07, 0.025, 0.065 * s);
+  limb(hipS, knee, 0.05, 0.03, mat.dog, `dog_thigh_${sd}`, dog);
+  limb(knee, paw, 0.028, 0.022, mat.dog, `dog_hind_shin_${sd}`, dog);
+  ball(V(0.05, 0.02, 0.065 * s), 0.03, mat.dog, `dog_hind_paw_${sd}`, dog, [1.4, 0.65, 1]);
+  const shS = chest.clone().add(V(0, -0.04, 0.05 * s)), elb = V(-0.19, 0.4, 0.065 * s), fp = V(-0.26, 0.5, 0.06 * s);
+  limb(shS, elb, 0.035, 0.026, mat.dog, `dog_foreleg_upper_${sd}`, dog);
+  limb(elb, fp, 0.024, 0.02, mat.dog, `dog_foreleg_lower_${sd}`, dog);
+  ball(fp, 0.026, mat.dog, `dog_fore_paw_${sd}`, dog, [1.2, 1, 1]);
+}
+limb(hip.clone().add(V(0.07, 0, 0)), V(0.25, 0.37, 0), 0.026, 0.016, mat.dog, 'dog_tail', dog, 16);
+limb(V(0.25, 0.37, 0), V(0.22, 0.47, 0), 0.016, 0.008, mat.dog, 'dog_tail_tip', dog, 16);
+
+/* ---------------- Sun on a rod ---------------- */
+const sun = new THREE.Group(); sun.name = 'sun'; sun.position.set(0.98, 2.35, -0.34); model.add(sun);
+limb(V(0.98, 0, -0.34), V(0.98, 2.35, -0.35), 0.012, 0.012, mat.brass, 'sun_rod', model, 16);
+const disc = mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.04, 64), mat.gold, 'sun_disc', sun);
+disc.rotation.x = Math.PI / 2;
+for (let k = 0; k < 24; k++) {
+  const a = k / 24 * Math.PI * 2, len = k % 2 ? 0.16 : 0.26;
+  const ray = mesh(new THREE.BoxGeometry(len, 0.012, 0.012), mat.gold, `sun_ray_${String(k + 1).padStart(2, '0')}`, sun);
+  ray.position.set(Math.cos(a) * (0.23 + len / 2), Math.sin(a) * (0.23 + len / 2), 0);
+  ray.rotation.z = a;
+}
+
+// turn so the card's front faces the default camera
+model.rotation.y = Math.atan2(1, 1.25);
+const wrap = new THREE.Group(); wrap.name = 'the_fool'; wrap.add(model);
+stage.setObject(wrap);
+</script>
+</body>
+</html>
